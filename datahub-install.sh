@@ -181,6 +181,23 @@ install_vault() {
 
 }
 
+# install all charts 
+install_charts() {
+    info "Installing nexus system..."
+    helm upgrade --install nexus $charts/qiot-covid19-datahub-nexus-1.0.0.tgz --namespace $project_name > /dev/null
+
+    info "Installing InfluxDB2..."
+    helm upgrade --install influxdb2 $charts/qiot-covid19-datahub-influxdb2-1.0.0.tgz --namespace $project_name > /dev/null
+
+    info "Installing PostgreSQL..."
+    helm upgrade --install postgresql $charts/qiot-covid19-datahub-postgresql-1.0.0.tgz --namespace $project_name > /dev/null
+
+    info "Installing Grafana..."
+    helm upgrade --install grafana $charts/qiot-covid19-datahub-grafana-1.0.0.tgz --namespace $project_name > /dev/null
+
+    info "Installing all the pipelines..."
+    helm upgrade --install pipelines $charts/qiot-covid19-datahub-pipelines-1.0.0.tgz --namespace $project_name > /dev/null
+}
 
 # Install all the charts and configure the system
 command.install() {
@@ -256,6 +273,7 @@ command.install() {
     # Now install cert-manager
     install_vault
     install_certmanager
+    install_charts
 } 
 
 command.uninstall() {
