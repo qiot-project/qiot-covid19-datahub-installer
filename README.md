@@ -52,3 +52,16 @@ $ ./datahub-install.sh
       -t|--temporary-dir [string]    Define the tmp dir for work (default: /tmp/datahub)
       -d|--base-domain [string]      Define the base domain for all routes (default: apps-crc.testing)
 ```
+
+The easiest call would be
+
+```bash
+$ oc login -u kubeadmin https://api.crc.testing:6443
+$ ./datahub-install.sh install
+```
+
+This would install everything with PREFIX 'covid19', temporary directory '/tmp/datahub' and base domain 'apps-crc.testing'. 
+
+## NOTE
+YOU MUST BE LOGGED INTO AN OPENSHIFT CLUSTER WITH cluster-admin role!
+
