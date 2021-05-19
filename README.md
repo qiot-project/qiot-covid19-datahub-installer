@@ -4,9 +4,9 @@ This is the installer project for the qIoT data hub. The main purpose of this pr
 ## What it does?
 
 The script will do the following:
-- Creating <prefix>-datahub namespace
+- Creating <<prefix>>-datahub namespace
 - Creating a cert-manager namespace
-- Creating <prefix>-(dev|int|prod) namespaces
+- Creating <<prefix>>-(dev|int|prod) namespaces
 - It will then git clone into qiot-covid19-datahub-operators repo
 - It will then git clone into qiot-covid19-datahub-pipelines repo
 - From the operators repo, it will helm package all charts into /tmp/datahub/charts folder
