@@ -9,7 +9,11 @@ declare PRJ_PREFIX="covid19"
 declare COMMAND="help"
 declare TMP="/tmp/datahub"
 declare BASE_DOMAIN="apps-crc.testing"
+declare VAULT_HOST_NAME=vault
+declare DRY_RUN=""
 
+VAULT_INTERNAL_ADDRESS=
+VAULT_EXTERNAL_ADDRESS=
 VAULT_KEY=
 VAULT_TOKEN=
 
@@ -38,12 +42,20 @@ while (( "$#" )); do
       shift 2
       ;;
     -d|--base-domain)
-      BASE_DOMAIN=$2
+      BASE_DOMAIN=$2      
       shift 2
       ;;
     -t|--temporary-dir)
       TMP=$2
       shift 2
+      ;;
+    -v|--vault-host-name)
+      VAULT_HOST_NAME=§$2
+      shift 2
+      ;;
+    -r|--dry-run)
+      DRY_RUN="true"
+      shift 
       ;;
     --)
       shift
@@ -87,6 +99,12 @@ command.help() {
       -p|--project-prefix [string]   Prefix to be added to datahub project names e.g. PREFIX-datahub (default: $PRJ_PREFIX)
       -t|--temporary-dir [string]    Define the tmp dir for work (default: $TMP)
       -d|--base-domain [string]      Define the base domain for all routes (default: $BASE_DOMAIN)
+      -v|--vault-host-name [string]  Define the internal host name of the vault (default: $VAULT_HOST_NAME)
+      -r|--dry-run                   Prepare the setup only, do not install anything
+
+  NOTES:
+      - External vault host will be https://VAULT_HOST_NAME.BASE_DOMAIN/ 
+      - Internal vault address will be https://VAULT_HOST_NAME.svc.cluster.local:8200
 
 EOF
 }
@@ -132,16 +150,16 @@ install_certmanager() {
     sh $git_operators/cert-manager/covid19/setup.sh $prod_proj $BASE_DOMAIN
 
     # install helm chart for covid19 issuer in each project
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $project_name > /dev/null
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $dev_proj > /dev/null
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $int_proj > /dev/null
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $prod_proj > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $project_name --set issuer.server=$VAULT_INTERNAL_ADDRESS > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $dev_proj --set issuer.server=$VAULT_INTERNAL_ADDRESS > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $int_proj --set issuer.server=$VAULT_INTERNAL_ADDRESS > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $prod_proj --set issuer.server=$VAULT_INTERNAL_ADDRESS > /dev/null
 
     # install helm chart for covid19 issuer in each project
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $project_name --set issuer.create=true > /dev/null
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $dev_proj --set issuer.create=true > /dev/null
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $int_proj --set issuer.create=true > /dev/null
-    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $prod_proj --set issuer.create=true > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $project_name --set issuer.server=$VAULT_INTERNAL_ADDRESS --set issuer.create=true > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $dev_proj --set issuer.server=$VAULT_INTERNAL_ADDRESS --set issuer.create=true > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $int_proj --set issuer.server=$VAULT_INTERNAL_ADDRESS --set issuer.create=true > /dev/null
+    helm upgrade --install vault $charts/covid19-issuer-0.1.0.tgz -n $prod_proj --set issuer.server=$VAULT_INTERNAL_ADDRESS --set issuer.create=true > /dev/null
 
 }
 
@@ -151,11 +169,15 @@ install_vault() {
         oc new-project cert-manager >/dev/null
     }
 
+    info "Internal Vault Address: $VAULT_INTERNAL_ADDRESS"
+    info "External Vault Address: $VAULT_EXTERNAL_ADDRESS"
+
     helm repo add hashicorp https://helm.releases.hashicorp.com > /dev/null
     helm repo update > /dev/null
 
     # replace hard coded hostname in override-standalone.yaml
-    helm upgrade --install vault hashicorp/vault --namespace cert-manager -f $git_operators/vault/override-standalone.yaml --set server.route.host=vault.$BASE_DOMAIN > /dev/null
+    # This is BTW the external address of the host name NOT the internal one!
+    helm upgrade --install vault hashicorp/vault --namespace cert-manager -f $git_operators/vault/override-standalone.yaml --set server.route.host=$VAULT_EXTERNAL_ADDRESS > /dev/null
 
     info "Configuring hashicorp/vault..."
     
@@ -199,39 +221,52 @@ install_charts() {
     helm upgrade --install pipelines $charts/qiot-covid19-datahub-pipelines-1.0.0.tgz --namespace $project_name > /dev/null
 }
 
-# Install all the charts and configure the system
-command.install() {
+
+# Check prerequisites for this script
+check_prereq() {
     oc version >/dev/null 2>&1 || err "No oc binary found"
     helm version >/dev/null 2>&1 || err "No helm binary found!"
     openssl version >/dev/null 2>&1 || err "No openssl binary found!"
     vault version >/dev/null 2>&1 || err "No vault binary found! Please install from https://vaultproject.io"
 
-
     kube_context=$(oc whoami -c)
     info "Using $kube_context to install datahub..."
+}
 
-    info "Creating namespace for $PRJ_PREFIX datahub..."
-    oc get ns $project_name 2>/dev/null  || { 
-        oc new-project $project_name >/dev/null 
-        info "$project_name created"
-    }
+# Build all the charts for the various subcomponents and 
+# store them into /tmp/datahub/charts
+build_charts() {
 
-    oc get ns $dev_proj 2>/dev/null  || { 
-        oc new-project $dev_proj >/dev/null 
-        info "$dev_proj created"
-    }
+    # First the easy part: Generate the pipelines chart... this is easy, just call a script.
+    info "Generating helm chart for pipelines..."
+    $git_pipelines/build-chart.sh > /dev/null 2>&1
+    mv $git_pipelines/target/qiot-covid19-datahub-pipelines*.tgz $charts/
 
-    oc get ns $int_proj 2>/dev/null  || { 
-        oc new-project $int_proj >/dev/null 
-        info "$int_proj created"
-    }
+    # Generate all the other charts from $git_operators folder
+    info "Generating Nexus chart..."
+    helm package $git_operators/nexus -u -d $charts > /dev/null 2>&1
 
-    oc get ns $prod_proj 2>/dev/null  || { 
-        oc new-project $prod_proj >/dev/null 
-        info "$prod_proj created"
-    }
+    info "Generating PostgreSQL chart..."
+    helm package $git_operators/postgreSQL -u -d $charts > /dev/null 2>&1
 
+    info "Generating InfluxDB2 chart..."
+    helm package $git_operators/influxdb2 -u -d $charts > /dev/null 2>&1
 
+    info "Generating Grafana chart..."
+    # Unfortunately, CRDs can't be templated with helm. 
+    # So we need to change the 00-grafana-operator.yaml file to point to the namespace
+    # we want it to be installed
+    sed -i .bak "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
+    rm $git_operators/Grafana/crds/*.bak
+    helm package $git_operators/Grafana -u -d $charts > /dev/null 2>&1
+
+    info "Generating Covid19-Issuer chart..."
+    helm package $git_operators/cert-manager/covid19/helm-charts/covid19-issuer -u -d $charts > /dev/null 2>&1
+
+}
+
+# Install all the charts and configure the system
+command.install() {
     info "Cloning corresponding repositories from GitHub..."
     git version >/dev/null 2>&1 || err "no git binary found"
 
@@ -245,67 +280,68 @@ command.install() {
     mkdir -p $git_operators
     mkdir -p $charts
     mkdir -p $ca
-    git clone https://github.com/qiot-project/qiot-covid19-datahub-operators.git $git_operators >/dev/null
-    git clone https://github.com/qiot-project/qiot-covid19-datahub-pipelines.git $git_pipelines >/dev/null
+    git clone https://github.com/qiot-project/qiot-covid19-datahub-operators.git $git_operators > /dev/null 2>&1
+    git clone https://github.com/qiot-project/qiot-covid19-datahub-pipelines.git $git_pipelines > /dev/null 2>&1
     
+    # Build the helm charts
+    build_charts
 
-    # First the easy part: Generate the pipelines chart... this is easy, just call a script.
-    info "Generating helm chart for pipelines..."
-    $git_pipelines/build-chart.sh
-    mv $git_pipelines/target/qiot-covid19-datahub-pipelines*.tgz $charts/
+    # Now install vault, cert-manager and all the charts, if we are not DRY_RUNning
+    [ $DRY_RUN ] || {
+      info "Creating all namespace for $PRJ_PREFIX ..."
+      oc get ns $project_name 2>/dev/null  || { 
+          oc new-project $project_name >/dev/null 
+          info "$project_name created"
+      }
 
-    # Generate all the other charts from $git_operators folder
-    info "Generating Nexus chart..."
-    helm package $git_operators/nexus -u -d $charts
+      oc get ns $dev_proj 2>/dev/null  || { 
+          oc new-project $dev_proj >/dev/null 
+          info "$dev_proj created"
+      }
 
-    info "Generating PostgreSQL chart..."
-    helm package $git_operators/postgreSQL -u -d $charts
+      oc get ns $int_proj 2>/dev/null  || { 
+          oc new-project $int_proj >/dev/null 
+          info "$int_proj created"
+      }
 
-    info "Generating InfluxDB2 chart..."
-    helm package $git_operators/influxdb2 -u -d $charts
-
-    info "Generating Grafana chart..."
-    helm package $git_operators/Grafana -u -d $charts
-
-    info "Generating Covid19-Issuer chart..."
-    helm package $git_operators/cert-manager/covid19/helm-charts/covid19-issuer -u -d $charts
-
-    # Now install cert-manager
-    install_vault
-    install_certmanager
-    install_charts
+      oc get ns $prod_proj 2>/dev/null  || { 
+          oc new-project $prod_proj >/dev/null 
+          info "$prod_proj created"
+      }
+      install_vault
+      install_certmanager
+      install_charts
+    }
 } 
 
+
+# Uninstall everything
 command.uninstall() {
-    oc version >/dev/null 2>&1 || err "no oc binary found"
-    helm version >/dev/null 2>&1 || err "no helm binary found!"
+    [ $DRY_RUN ] && info "Dry run. Nothing to do." || {
+      oc get ns cert-manager 2>/dev/null && { 
+        info "Deleting cert-manager project"
+        oc delete project cert-manager
+      }
 
-    kube_context=$(oc whoami -c)
-    info "Using $kube_context to uninstall datahub..."
+      oc get ns $project_name 2>/dev/null && { 
+        info "Deleting $project_name project"
+        oc delete project $project_name
+      }
 
-    oc get ns cert-manager 2>/dev/null && { 
-      info "Deleting cert-manager project"
-      oc delete project cert-manager
-    }
+      oc get ns $dev_proj 2>/dev/null && { 
+        info "Deleting $dev_proj project"
+        oc delete project $dev_proj
+      }
 
-    oc get ns $project_name 2>/dev/null && { 
-      info "Deleting $project_name project"
-      oc delete project $project_name
-    }
+      oc get ns $int_proj 2>/dev/null && { 
+        info "Deleting $int_proj project"
+        oc delete project $int_proj
+      }
 
-    oc get ns $dev_proj 2>/dev/null && { 
-      info "Deleting $dev_proj project"
-      oc delete project $dev_proj
-    }
-
-    oc get ns $int_proj 2>/dev/null && { 
-      info "Deleting $int_proj project"
-      oc delete project $int_proj
-    }
-
-    oc get ns $prod_proj 2>/dev/null && { 
-      info "Deleting $prod_proj project"
-      oc delete project $prod_proj
+      oc get ns $prod_proj 2>/dev/null && { 
+        info "Deleting $prod_proj project"
+        oc delete project $prod_proj
+      }
     }
 }
 
@@ -317,6 +353,11 @@ main() {
   }
 
   cd $SCRIPT_DIR
+  VAULT_INTERNAL_ADDRESS=https://$VAULT_HOST_NAME.svc.cluster.local:8200
+  VAULT_EXTERNAL_ADDRESS=$VAULT_HOST_NAME.$BASE_DOMAIN
+
+  check_prereq
+
   $fn
   return $?
 }
