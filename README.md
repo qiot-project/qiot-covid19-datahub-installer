@@ -52,6 +52,12 @@ $ ./datahub-install.sh
       -p|--project-prefix [string]   Prefix to be added to datahub project names e.g. PREFIX-datahub (default: covid19)
       -t|--temporary-dir [string]    Define the tmp dir for work (default: /tmp/datahub)
       -d|--base-domain [string]      Define the base domain for all routes (default: apps-crc.testing)
+      -v|--vault-host-name [string]  Define the internal host name of the vault (default: vault)
+      -r|--dry-run                   Prepare the setup only, do not install anything
+
+  NOTES:
+      - External vault host will be https://VAULT_HOST_NAME.BASE_DOMAIN/
+      - Internal vault address will be https://VAULT_HOST_NAME.svc.cluster.local:8200
 ```
 
 The easiest way to install the datahub would be
