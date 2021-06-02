@@ -73,6 +73,7 @@ declare -r project_name=$PRJ_PREFIX-datahub
 declare -r dev_proj=$PRJ_PREFIX-dev
 declare -r int_proj=$PRJ_PREFIX-int
 declare -r prod_proj=$PRJ_PREFIX-prod
+declare -r cert_manager_proj=$PRJ_PREFIX-certmanager
 
 declare -r git_pipelines="$TMP/pipelines"
 declare -r git_operators="$TMP/operators"
@@ -110,37 +111,37 @@ EOF
 }
 
 install_certmanager() {
-    info "Installing cert-manager into cert-manager namespace"
-    oc get ns cert-manager 2>/dev/null || {
+    info "Installing cert-manager into $cert_manager_proj namespace"
+    oc get ns $cert_manager_proj 2>/dev/null || {
         info "Installing cert-manager into cert-manager namespace"
-        oc new-project cert-manager >/dev/null
+        oc new-project $cert_manager_proj >/dev/null
     }
     
     helm repo add jetstack https://charts.jetstack.io > /dev/null
     helm repo update > /dev/null
 
-    helm upgrade --install cert-manager jetstack/cert-manager --namespace cert-manager --version v1.2.0 --set installCRDs=true > /dev/null
+    helm upgrade --install cert-manager jetstack/cert-manager --namespace $cert_manager_proj --version v1.2.0 --set installCRDs=true > /dev/null
     sleep 10
 
     info "Generating keys..."
     openssl req -new -nodes -newkey rsa:2048 -x509 -keyout $ca/tls.key -out $ca/tls.crt -days 365 -subj "/CN=qiot-project.github.io" -extensions v3_ca
-    oc create secret generic qiot-ca --from-file=$ca/ -n cert-manager
+    oc create secret generic qiot-ca --from-file=$ca/ -n $cert_manager_proj
 
     # we need to wait until everything is settled. Otherwise we can't 
     sleep 20
 
-    oc apply -f $git_operators/cert-manager/sample/issuer-qiot-ca-sample.yaml -n cert-manager
-    oc apply -f $git_operators/cert-manager/sample/certificate-qiot-device-sample.yaml -n cert-manager
+    oc apply -f $git_operators/cert-manager/sample/issuer-qiot-ca-sample.yaml -n $cert_manager_proj
+    oc apply -f $git_operators/cert-manager/sample/certificate-qiot-device-sample.yaml -n $cert_manager_proj
 
     # From here, we have to have a working vault installed
     [ -z $VAULT_KEY ] && err "Could not determine VAULT_KEY. Exiting. Please rerun again."
     [ -z $VAULT_TOKEN ] && err "Could not determine VAULT_TOKEN. Exiting. Please rerun again."
 
-    oc apply -f $git_operators/cert-manager/sample/issuer-qiot-vault-sample.yaml -n cert-manager
-    oc apply -f $git_operators/cert-manager/sample/certificate-qiot-device-vault-issuer.yaml -n cert-manager
+    oc apply -f $git_operators/cert-manager/sample/issuer-qiot-vault-sample.yaml -n $cert_manager_proj
+    oc apply -f $git_operators/cert-manager/sample/certificate-qiot-device-vault-issuer.yaml -n $cert_manager_proj
 
     # get vault address
-    export VAULT_ADDR=https://$(oc get route vault --no-headers -o custom-columns=HOST:.spec.host -n cert-manager)
+    export VAULT_ADDR=https://$(oc get route vault --no-headers -o custom-columns=HOST:.spec.host -n $cert_manager_proj)
     export KEYS=$VAULT_KEY
 
     # configure all the projects
@@ -164,9 +165,9 @@ install_certmanager() {
 }
 
 install_vault() {
-    info "Installing hashicorp/vault into cert-manager namespace"
-    oc get ns cert-manager 2>/dev/null || {
-        oc new-project cert-manager >/dev/null
+    info "Installing hashicorp/vault into $cert_manager_proj namespace"
+    oc get ns $cert_manager_proj 2>/dev/null || {
+        oc new-project $cert_manager_proj >/dev/null
     }
 
     info "Internal Vault Address: $VAULT_INTERNAL_ADDRESS"
@@ -177,7 +178,7 @@ install_vault() {
 
     # replace hard coded hostname in override-standalone.yaml
     # This is BTW the external address of the host name NOT the internal one!
-    helm upgrade --install vault hashicorp/vault --namespace cert-manager -f $git_operators/vault/override-standalone.yaml --set server.route.host=$VAULT_EXTERNAL_ADDRESS > /dev/null
+    helm upgrade --install vault hashicorp/vault --namespace $cert_manager_proj -f $git_operators/vault/override-standalone.yaml --set server.route.host=$VAULT_EXTERNAL_ADDRESS 
 
     info "Configuring hashicorp/vault..."
     
@@ -256,7 +257,7 @@ build_charts() {
     # Unfortunately, CRDs can't be templated with helm. 
     # So we need to change the 00-grafana-operator.yaml file to point to the namespace
     # we want it to be installed
-    sed -i .bak "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
+    sed -i "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
     rm $git_operators/Grafana/crds/*.bak
     helm package $git_operators/Grafana -u -d $charts > /dev/null 2>&1
 
@@ -318,9 +319,9 @@ command.install() {
 # Uninstall everything
 command.uninstall() {
     [ $DRY_RUN ] && info "Dry run. Nothing to do." || {
-      oc get ns cert-manager 2>/dev/null && { 
-        info "Deleting cert-manager project"
-        oc delete project cert-manager
+      oc get ns $cert_manager_proj 2>/dev/null && { 
+        info "Deleting $cert_manager_proj project"
+        oc delete project $cert_manager_proj
       }
 
       oc get ns $project_name 2>/dev/null && { 
