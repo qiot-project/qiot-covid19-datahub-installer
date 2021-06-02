@@ -10,7 +10,7 @@ declare COMMAND="help"
 declare TMP="/tmp/datahub"
 declare BASE_DOMAIN="apps-crc.testing"
 declare VAULT_HOST_NAME=vault
-declare DRY_RUN=""
+declare DRY_RUN="false"
 
 VAULT_INTERNAL_ADDRESS=
 VAULT_EXTERNAL_ADDRESS=
@@ -288,7 +288,7 @@ command.install() {
     build_charts
 
     # Now install vault, cert-manager and all the charts, if we are not DRY_RUNning
-    [ $DRY_RUN ] || {
+    if [[ $DRY_RUN -eq "false" ]]; then 
       info "Creating all namespace for $PRJ_PREFIX ..."
       oc get ns $project_name 2>/dev/null  || { 
           oc new-project $project_name >/dev/null 
@@ -312,7 +312,9 @@ command.install() {
       install_vault
       install_certmanager
       install_charts
-    }
+    elif
+      info "DRY_RUN is $DRY_RUN"
+    fi
 } 
 
 
