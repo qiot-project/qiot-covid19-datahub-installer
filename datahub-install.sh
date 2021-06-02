@@ -259,7 +259,7 @@ build_charts() {
     # So we need to change the 00-grafana-operator.yaml file to point to the namespace
     # we want it to be installed
     # Unfortunately, calling sed on Mac is different than calling sed on Linux
-    [ $HOST_MACHINE -eq 'Darwin' ] && {
+    [ $HOST_MACHINE == 'Darwin' ] && {
       info "Running on macOS"
       sed -i ''  "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
     } || {
