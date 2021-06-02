@@ -10,7 +10,7 @@ declare COMMAND="help"
 declare TMP="/tmp/datahub"
 declare BASE_DOMAIN="apps-crc.testing"
 declare VAULT_HOST_NAME=vault
-declare DRY_RUN="false"
+declare DRY_RUN=0
 
 VAULT_INTERNAL_ADDRESS=
 VAULT_EXTERNAL_ADDRESS=
@@ -54,7 +54,7 @@ while (( "$#" )); do
       shift 2
       ;;
     -r|--dry-run)
-      DRY_RUN="true"
+      DRY_RUN=1
       shift 
       ;;
     --)
@@ -257,13 +257,13 @@ build_charts() {
     # Unfortunately, CRDs can't be templated with helm. 
     # So we need to change the 00-grafana-operator.yaml file to point to the namespace
     # we want it to be installed
-    sed -i "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
-    rm $git_operators/Grafana/crds/*.bak > /dev/null 2>&1
+    sed -i ''  "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
+
+    #rm $git_operators/Grafana/crds/*.bak > /dev/null 2>&1
     helm package $git_operators/Grafana -u -d $charts > /dev/null 2>&1
 
     info "Generating Covid19-Issuer chart..."
     helm package $git_operators/cert-manager/covid19/helm-charts/covid19-issuer -u -d $charts > /dev/null 2>&1
-
 }
 
 # Install all the charts and configure the system
@@ -284,11 +284,14 @@ command.install() {
     git clone https://github.com/qiot-project/qiot-covid19-datahub-operators.git $git_operators > /dev/null 2>&1
     git clone https://github.com/qiot-project/qiot-covid19-datahub-pipelines.git $git_pipelines > /dev/null 2>&1
     
+  
     # Build the helm charts
     build_charts
 
     # Now install vault, cert-manager and all the charts, if we are not DRY_RUNning
-    if [[ $DRY_RUN -eq "false" ]]; then 
+    info "Dry run: $DRY_RUN"
+
+    [ $DRY_RUN -eq 1 ] || {
       info "Creating all namespace for $PRJ_PREFIX ..."
       oc get ns $project_name 2>/dev/null  || { 
           oc new-project $project_name >/dev/null 
@@ -312,15 +315,13 @@ command.install() {
       install_vault
       install_certmanager
       install_charts
-    elif
-      info "DRY_RUN is $DRY_RUN"
-    fi
-} 
+    }
+}
 
 
 # Uninstall everything
 command.uninstall() {
-    [ $DRY_RUN ] && info "Dry run. Nothing to do." || {
+    [ $DRY_RUN -eq 1 ] && info "Dry run. Nothing to do." || {
       oc get ns $cert_manager_proj 2>/dev/null && { 
         info "Deleting $cert_manager_proj project"
         oc delete project $cert_manager_proj
