@@ -258,7 +258,7 @@ build_charts() {
     # So we need to change the 00-grafana-operator.yaml file to point to the namespace
     # we want it to be installed
     sed -i "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
-    rm $git_operators/Grafana/crds/*.bak
+    rm $git_operators/Grafana/crds/*.bak > /dev/null 2>&1
     helm package $git_operators/Grafana -u -d $charts > /dev/null 2>&1
 
     info "Generating Covid19-Issuer chart..."
