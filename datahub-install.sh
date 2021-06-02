@@ -5,6 +5,7 @@
 
 set -e -u -o pipefail
 declare -r SCRIPT_DIR=$(cd -P $(dirname $0) && pwd)
+declare -r HOST_MACHINE=$(uname) # Darwin on Mac / Linux on well Linux
 declare PRJ_PREFIX="covid19"
 declare COMMAND="help"
 declare TMP="/tmp/datahub"
@@ -257,7 +258,15 @@ build_charts() {
     # Unfortunately, CRDs can't be templated with helm. 
     # So we need to change the 00-grafana-operator.yaml file to point to the namespace
     # we want it to be installed
-    sed -i ''  "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
+    # Unfortunately, calling sed on Mac is different than calling sed on Linux
+    [ $HOST_MACHINE -eq 'Darwin' ] && {
+      info "Running on macOS"
+      sed -i ''  "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
+    } || {
+      info "Running on Linux"
+      sed -i "s/release-namespace/$project_name/" $git_operators/Grafana/crds/00-grafana-operator.yaml
+    }
+
 
     #rm $git_operators/Grafana/crds/*.bak > /dev/null 2>&1
     helm package $git_operators/Grafana -u -d $charts > /dev/null 2>&1
