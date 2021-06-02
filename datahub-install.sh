@@ -125,11 +125,11 @@ install_certmanager() {
     sleep 10
 
     info "Generating keys..."
-    openssl req -new -nodes -newkey rsa:2048 -x509 -keyout $ca/tls.key -out $ca/tls.crt -days 365 -subj "/CN=qiot-project.github.io" -extensions v3_ca
-    oc create secret generic qiot-ca --from-file=$ca/ -n $cert_manager_proj
+    openssl req -new -nodes -newkey rsa:2048 -x509 -keyout $ca/tls.key -out $ca/tls.crt -days 365 -subj "/CN=qiot-project.github.io" -extensions v3_ca > /dev/null 2>&1
+    oc create secret generic qiot-ca --from-file=$ca/ -n $cert_manager_proj > /dev/null 2>&1
 
     # we need to wait until everything is settled. Otherwise we can't 
-    sleep 20
+    sleep 30
 
     oc apply -f $git_operators/cert-manager/sample/issuer-qiot-ca-sample.yaml -n $cert_manager_proj
     oc apply -f $git_operators/cert-manager/sample/certificate-qiot-device-sample.yaml -n $cert_manager_proj
@@ -145,6 +145,9 @@ install_certmanager() {
     export VAULT_ADDR=https://$(oc get route vault --no-headers -o custom-columns=HOST:.spec.host -n $cert_manager_proj)
     export KEYS=$VAULT_KEY
 
+    info "$VAULT_ADDR"
+    info "$KEYS"
+    
     # configure all the projects
     sh $git_operators/cert-manager/covid19/setup.sh $project_name $BASE_DOMAIN
     sh $git_operators/cert-manager/covid19/setup.sh $dev_proj $BASE_DOMAIN
@@ -179,7 +182,7 @@ install_vault() {
 
     # replace hard coded hostname in override-standalone.yaml
     # This is BTW the external address of the host name NOT the internal one!
-    helm upgrade --install vault hashicorp/vault --namespace $cert_manager_proj -f $git_operators/vault/override-standalone.yaml --set server.route.host=$VAULT_EXTERNAL_ADDRESS 
+    helm upgrade --install vault hashicorp/vault --namespace $cert_manager_proj -f $git_operators/vault/override-standalone.yaml --set server.route.host=$VAULT_EXTERNAL_ADDRESS > /dev/null
 
     info "Configuring hashicorp/vault..."
     
