@@ -147,7 +147,7 @@ install_certmanager() {
 
     info "$VAULT_ADDR"
     info "$KEYS"
-    
+
     # configure all the projects
     sh $git_operators/cert-manager/covid19/setup.sh $project_name $BASE_DOMAIN
     sh $git_operators/cert-manager/covid19/setup.sh $dev_proj $BASE_DOMAIN
@@ -229,7 +229,7 @@ install_charts() {
 
 # Check prerequisites for this script
 check_prereq() {
-    oc version >/dev/null 2>&1 || err "No oc binary found"
+    oc version >/dev/null 2>&1 || err "No oc binary found or not logged into an OpenShift server"
     helm version >/dev/null 2>&1 || err "No helm binary found!"
     openssl version >/dev/null 2>&1 || err "No openssl binary found!"
     vault version >/dev/null 2>&1 || err "No vault binary found! Please install from https://vaultproject.io"
