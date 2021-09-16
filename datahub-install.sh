@@ -9,7 +9,7 @@ declare -r HOST_MACHINE=$(uname) # Darwin on Mac / Linux on well Linux
 declare PRJ_PREFIX="covid19"
 declare COMMAND="help"
 declare TMP="/tmp/datahub"
-declare BASE_DOMAIN="apps-crc.testing"
+declare BASE_DOMAIN="apps.cluster-b3a5.b3a5.sandbox1327.opentlc.com"
 declare VAULT_HOST_NAME=vault
 declare DRY_RUN=0
 
@@ -124,26 +124,14 @@ install_certmanager() {
     helm upgrade --install cert-manager jetstack/cert-manager --namespace $cert_manager_proj --version v1.2.0 --set installCRDs=true > /dev/null
     sleep 10
 
-    info "Generating keys..."
-    openssl req -new -nodes -newkey rsa:2048 -x509 -keyout $ca/tls.key -out $ca/tls.crt -days 365 -subj "/CN=qiot-project.github.io" -extensions v3_ca > /dev/null 2>&1
-    oc create secret generic qiot-ca --from-file=$ca/ -n $cert_manager_proj > /dev/null 2>&1
-
-    # we need to wait until everything is settled. Otherwise we can't 
-    sleep 30
-
-    oc apply -f $git_operators/cert-manager/sample/issuer-qiot-ca-sample.yaml -n $cert_manager_proj
-    oc apply -f $git_operators/cert-manager/sample/certificate-qiot-device-sample.yaml -n $cert_manager_proj
-
-    # From here, we have to have a working vault installed
+    # # From here, we have to have a working vault installed
     [ -z $VAULT_KEY ] && err "Could not determine VAULT_KEY. Exiting. Please rerun again."
     [ -z $VAULT_TOKEN ] && err "Could not determine VAULT_TOKEN. Exiting. Please rerun again."
-
-    oc apply -f $git_operators/cert-manager/sample/issuer-qiot-vault-sample.yaml -n $cert_manager_proj
-    oc apply -f $git_operators/cert-manager/sample/certificate-qiot-device-vault-issuer.yaml -n $cert_manager_proj
 
     # get vault address
     export VAULT_ADDR=https://$(oc get route vault --no-headers -o custom-columns=HOST:.spec.host -n $cert_manager_proj)
     export KEYS=$VAULT_KEY
+    export VAULT_TOKEN=$VAULT_TOKEN
 
     info "$VAULT_ADDR"
     info "$KEYS"
@@ -189,11 +177,11 @@ install_vault() {
     # copy policy.hcl and script to pod
     cp scripts/configure-vault.sh $git_operators/vault/sample/
     oc get pod
-    sleep 10
-    oc rsync $git_operators/vault/sample/ vault-0:/tmp/
+    sleep 20
+    oc cp $git_operators/vault/sample/ vault-0:/tmp/
  
     # execute that script on pod
-    oc exec vault-0 -- sh /tmp/configure-vault.sh > $TMP/configure-vault.out
+    oc exec vault-0 -- sh /tmp/sample/configure-vault.sh > $TMP/configure-vault.out
 
     # grep output to get VAULT_KEY and VAULT_TOKEN
     VAULT_KEY=$(cat $TMP/configure-vault.out | grep "Exported KEY: " | cut -d' ' -f 3)
@@ -223,7 +211,7 @@ install_charts() {
     helm upgrade --install grafana $charts/qiot-covid19-datahub-grafana-1.0.0.tgz --namespace $project_name > /dev/null
 
     info "Installing all the pipelines..."
-    helm upgrade --install pipelines $charts/qiot-covid19-datahub-pipelines-1.0.0.tgz --namespace $project_name > /dev/null
+    helm upgrade --install pipelines $charts/qiot-covid19-datahub-pipelines-0.1.2.tgz --namespace $project_name > /dev/null
 }
 
 
@@ -244,7 +232,7 @@ build_charts() {
 
     # First the easy part: Generate the pipelines chart... this is easy, just call a script.
     info "Generating helm chart for pipelines..."
-    $git_pipelines/build-chart.sh > /dev/null 2>&1
+    git_pipelines/build-chart.sh > /dev/null 2>&1
     mv $git_pipelines/target/qiot-covid19-datahub-pipelines*.tgz $charts/
 
     # Generate all the other charts from $git_operators folder
@@ -324,8 +312,9 @@ command.install() {
           oc new-project $prod_proj >/dev/null 
           info "$prod_proj created"
       }
-      install_vault
-      install_certmanager
+      
+      #install_vault
+      #install_certmanager
       install_charts
     }
 }
@@ -369,7 +358,7 @@ main() {
   }
 
   cd $SCRIPT_DIR
-  VAULT_INTERNAL_ADDRESS=https://$VAULT_HOST_NAME.svc.cluster.local:8200
+  VAULT_INTERNAL_ADDRESS=https://$VAULT_HOST_NAME-internal.$PRJ_PREFIX-certmanager.svc.cluster.local:8200
   VAULT_EXTERNAL_ADDRESS=$VAULT_HOST_NAME.$BASE_DOMAIN
 
   check_prereq

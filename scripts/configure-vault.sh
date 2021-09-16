@@ -32,7 +32,7 @@
     vault write --tls-skip-verify auth/kubernetes/config token_reviewer_jwt=$JWT kubernetes_host=$KUBERNETES_HOST kubernetes_ca_cert=@/var/run/secrets/kubernetes.io/serviceaccount/ca.crt
 
     # Create PKI policy
-    vault policy write --tls-skip-verify pki-policy /tmp/policy.hcl
+    vault policy write --tls-skip-verify pki-policy /tmp/sample/policy.hcl
 
     # Authorize Cert-manager
     vault write --tls-skip-verify auth/kubernetes/role/cert-manager bound_service_account_names=cert-manager bound_service_account_namespaces='cert-manager' policies=pki-policy ttl=2h
